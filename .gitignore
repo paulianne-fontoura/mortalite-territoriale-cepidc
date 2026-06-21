@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.Rhistory
+.RData
+data/raw/*
+data/processed/*
+!data/**/.gitkeep
+report/*.aux
+report/*.log
+report/*.out
+report/*.toc
+report/*.fls
+report/*.fdb_latexmk
+report/*.synctex.gz
+.DS_Store
