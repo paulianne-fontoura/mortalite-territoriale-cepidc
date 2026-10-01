@@ -3,7 +3,10 @@
 On vérifie la couverture (101 départements, 11 classes d'âge, 3 modalités de sexe),
 l'absence de valeurs négatives ou manquantes, la cohérence interne (les décès
 « Tous sexes » égalent la somme hommes + femmes), et un ordre de grandeur sur le
-total national. Le bilan est exporté en JSON.
+total national. Pour la table par cause, on vérifie que les 18 chapitres
+réunis redonnent exactement les décès toutes causes de chaque cellule, ce qui
+rend la décomposition des écarts par cause exacte. Le bilan est exporté en JSON,
+avec la provenance des fichiers sources.
 """
 from __future__ import annotations
 import json
@@ -22,6 +25,15 @@ def run() -> dict:
     ecart_sexe = int((cmp["deces_ts"] != cmp["deces_hf"]).sum())
 
     cellules_attendues = 101 * len(C.CLASSES_AGE) * 3
+
+    # Les chapitres réunis doivent redonner les décès toutes causes, cellule par cellule
+    causes = pd.read_csv(C.DECES_CAUSES_CSV, dtype={"dep_code": str, "chapitre": str})
+    somme_chap = (causes.groupby(["dep_code", "sexe", "classe_age"])["deces"].sum()
+                  .rename("deces_chapitres").reset_index())
+    tc = df.assign(dep_code=df["dep_code"].astype(str).str.zfill(2))
+    cmp_causes = tc.merge(somme_chap, on=["dep_code", "sexe", "classe_age"], how="left")
+    ecart_causes = int((cmp_causes["deces"] != cmp_causes["deces_chapitres"]).sum())
+    provenance = json.loads(C.PROVENANCE_JSON.read_text(encoding="utf-8"))
     rep = {
         "annee": int(C.ANNEE),
         "departements": int(df["dep_code"].nunique()),
@@ -36,18 +48,29 @@ def run() -> dict:
             "incoherences_tous_sexes_vs_h_f": ecart_sexe,
             "deces_total_tous_sexes": int(ts["deces"].sum()),
             "population_totale_tous_sexes": int(ts["population"].sum()),
+            "chapitres_de_causes": int(causes["chapitre"].nunique()),
+            "cellules_par_cause": int(len(causes)),
+            "cellules_ou_chapitres_different_du_total": ecart_causes,
         },
+        "provenance": provenance,
     }
     c = rep["controles"]
     rep["statut"] = "OK" if (c["deces_negatifs"] == 0 and c["population_nulle_ou_negative"] == 0
                              and c["valeurs_manquantes"] == 0 and c["incoherences_tous_sexes_vs_h_f"] == 0
-                             and c["cellules_attendues"] == rep["cellules"]) else "ALERTE"
+                             and c["cellules_attendues"] == rep["cellules"]
+                             and c["chapitres_de_causes"] == len(C.CHAPITRES)
+                             and c["cellules_par_cause"] == cellules_attendues * len(C.CHAPITRES)
+                             and c["cellules_ou_chapitres_different_du_total"] == 0) else "ALERTE"
 
     C.QUALITE_JSON.write_text(json.dumps(rep, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"[qualité] statut={rep['statut']} — {rep['departements']} départements, "
+    print(f"[qualité] statut={rep['statut']} - {rep['departements']} départements, "
           f"{rep['cellules']} cellules -> {C.QUALITE_JSON.name}")
     print(f"[qualité] décès toutes causes France entière {C.ANNEE} : "
           f"{c['deces_total_tous_sexes']:,}".replace(",", " "))
+    print(f"[qualité] chapitres de causes : {c['chapitres_de_causes']}, cellules où leur somme "
+          f"diffère du total : {c['cellules_ou_chapitres_different_du_total']}")
+    if rep["statut"] != "OK":
+        raise SystemExit("[qualité] contrôle en échec, voir rapport_qualite.json")
     return rep
 
 

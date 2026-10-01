@@ -1,1 +1,1 @@
-"""Chaîne de traitement — mortalité territoriale (données ouvertes CépiDc / INSEE)."""
+"""Chaîne de traitement - mortalité territoriale (données ouvertes CépiDc / INSEE)."""
